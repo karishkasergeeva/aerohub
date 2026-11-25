@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AeroHub - табло FIDS</title>
+  <style>
+    body { margin: 0; background: #0d1b2a; color: #f1f5f9; font: 20px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    header { display: flex; align-items: center; justify-content: space-between; padding: 14px 28px; background: #13263d; }
+    header h1 { margin: 0; font-size: 28px; letter-spacing: 1px; }
+    header .tabs button { background: transparent; color: #9fb3c8; border: 1px solid #2c4561; padding: 8px 16px; font-size: 18px; cursor: pointer; }
+    header .tabs button.active { background: #f5c242; color: #0d1b2a; border-color: #f5c242; }
+    #clock { font-variant-numeric: tabular-nums; font-size: 26px; color: #f5c242; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; font-size: 14px; color: #8aa4bf; font-weight: 500; padding: 10px 14px; border-bottom: 2px solid #23405f; }
+    td { padding: 10px 14px; border-bottom: 1px solid #1c3350; font-variant-numeric: tabular-nums; }
+    tr:nth-child(even) td { background: #11233a; }
+    .en { display: block; font-size: 13px; color: #8aa4bf; }
+    .r-BOARDING, .r-CHECK_IN { color: #7dd3fc; } .r-DELAYED { color: #fbbf24; } .r-CANCELLED, .r-DIVERTED { color: #f87171; }
+    .r-DEPARTED, .r-ARRIVED { color: #86efac; }
+    .flash td { animation: f 2s ease-out; } @keyframes f { from { background: #335c86; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 id="title">ВІДПРАВЛЕННЯ <span class="en" style="display:inline;font-size:18px">Departures</span></h1>
+    <div class="tabs"><button data-dir="D" class="active">Відправлення</button><button data-dir="A">Прибуття</button></div>
+    <div id="clock"></div>
+  </header>
+  <table>
+    <thead id="head"></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <script>
+    "use strict";
+    let dir = new URLSearchParams(location.search).get("dir") || "D";
+    const rows = new Map();
+    const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    // Табло для пасажирів показує місцевий час аеропорту
+    const TZ = "Europe/Kyiv";
+    const fmt = (iso) => iso ? new Intl.DateTimeFormat("uk-UA", { timeZone: TZ, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(iso)) : "";
+    const day = () => new Date().toISOString().slice(0, 10);
+
+    function render(flash) {
+      document.getElementById("title").innerHTML = dir === "D" ? 'ВІДПРАВЛЕННЯ <span class="en" style="display:inline;font-size:18px">Departures</span>'
+        : 'ПРИБУТТЯ <span class="en" style="display:inline;font-size:18px">Arrivals</span>';
+      document.getElementById("head").innerHTML = dir === "D"
+        ? "<tr><th>Час</th><th>Рейс</th><th>Призначення</th><th>Термінал</th><th>Реєстрація</th><th>Вихід</th><th>Статус</th></tr>"
+        : "<tr><th>Час</th><th>Рейс</th><th>Звідки</th><th>Термінал</th><th>Стрічка</th><th>Статус</th></tr>";
+      const list = [...rows.values()].filter((r) => r.direction === dir).sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at));
+      document.getElementById("rows").innerHTML = list.map((r) => `<tr class="${r.id === flash ? "flash" : ""}">
+        <td>${fmt(r.scheduled_at)}${r.estimated_time && r.estimated_time !== r.time ? ` <span class="en">${esc(fmt(r.estimated_at))}</span>` : ""}</td>
+        <td><b>${esc(r.flight_no)}</b></td><td>${esc(r.city_uk)}<span class="en">${esc(r.city_en)}</span></td><td>${esc(r.terminal)}</td>
+        ${dir === "D" ? `<td>${esc(r.desks)}</td><td>${esc(r.gate)}</td>` : `<td>${esc(r.belt)}</td>`}
+        <td class="r-${r.status}">${esc(r.remark_uk)}<span class="en">${esc(r.remark_en)}</span></td></tr>`).join("");
+    }
+
+    async function load() {
+      const data = await (await fetch(`/api/v1/public/flights?date=${day()}`)).json();
+      rows.clear(); data.forEach((r) => rows.set(r.id, r)); render();
+    }
+
+    function connect() {
+      const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/fids`);
+      ws.onmessage = (m) => {
+        const msg = JSON.parse(m.data);
+        if (msg.type === "fids.update" && msg.flight && msg.flight.sched_date === day()) { rows.set(msg.flight.id, msg.flight); render(msg.flight.id); }
+        if (msg.type === "fids.remove") { rows.delete(msg.id); render(); }
+      };
+      ws.onclose = () => setTimeout(() => { load(); connect(); }, 3000);
+    }
+
+    document.querySelectorAll(".tabs button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.dir === dir);
+      b.onclick = () => { dir = b.dataset.dir; document.querySelectorAll(".tabs button").forEach((x) => x.classList.toggle("active", x === b)); render(); };
+    });
+    setInterval(() => (document.getElementById("clock").textContent = new Intl.DateTimeFormat("uk-UA", { timeZone: TZ, hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).format(new Date()) + " Київ"), 1000);
+    load(); connect();
+  </script>
+</body>
+</html>

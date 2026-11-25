@@ -1,0 +1,39 @@
+# Безперервна інтеграція: тести всіх сервісів, перевірка залежностей на вразливості, збирання образів
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: aerohub, POSTGRES_PASSWORD: aerohub, POSTGRES_DB: aerohub }
+        ports: ["55432:5432"]
+        options: --health-cmd "pg_isready -U aerohub" --health-interval 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - name: Створення баз даних сервісів
+        run: |
+          for db in flight_db resource_db fids_db acdm_db task_db; do
+            PGPASSWORD=aerohub psql -h localhost -p 55432 -U aerohub -c "CREATE DATABASE $db"
+          done
+      - run: pip install -r services/requirements-dev.txt -e libs/aerohub_common
+      - name: Модульні тести
+        run: scripts/test.sh
+      - name: Аудит залежностей (pip-audit)
+        run: pip install pip-audit && pip-audit -r services/requirements.lock
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Збирання образів
+        run: docker compose build

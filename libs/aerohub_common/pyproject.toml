@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aerohub-common"
+version = "0.1.0"
+description = "Спільні компоненти мікросервісів ІС аеропорту AeroHub: події, шина, outbox, автентифікація"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.1",
+    "aiokafka>=0.10",
+    "pyjwt>=2.8",
+    "pydantic>=2.5",
+]
+
+[tool.setuptools]
+packages = ["aerohub_common"]

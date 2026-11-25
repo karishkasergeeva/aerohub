@@ -1,0 +1,12 @@
+# Автоматичні запити на оновлення залежностей (розділ 20 звіту)
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /services
+    schedule: { interval: weekly }
+  - package-ecosystem: docker
+    directory: /services
+    schedule: { interval: weekly }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: monthly }

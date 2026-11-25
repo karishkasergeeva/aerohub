@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AeroHub - робоче місце AOC і планувальника</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="login-view" class="login" hidden>
+    <div class="panel">
+      <h2>Вхід до AeroHub</h2>
+      <form id="login-form">
+        <label>Логін <input name="username" autocomplete="username" required value="planner"></label>
+        <label>Пароль <input name="password" type="password" autocomplete="current-password" required value="planner"></label>
+        <button class="primary" type="submit">Увійти</button>
+        <div class="error" id="login-error"></div>
+      </form>
+      <div class="hint">Демо-користувачі: planner, dispatcher, agent, handler, admin (пароль збігається з логіном).</div>
+    </div>
+  </div>
+
+  <div id="app-view" hidden>
+    <header>
+      <h1>AeroHub</h1>
+      <nav>
+        <button data-tab="flights" class="active">Рейси</button>
+        <button data-tab="resources">Ресурси</button>
+        <button data-tab="acdm">A-CDM</button>
+        <button data-tab="tasks">Обслуговування</button>
+        <button data-tab="schedule">Розклад (SSIM)</button>
+        <button onclick="window.open('board.html','_blank')">Табло ↗</button>
+      </nav>
+      <div class="user"><select id="tz" title="Часовий пояс відображення" style="padding:3px 6px"><option value="Europe/Kyiv">Київ</option><option value="UTC">UTC</option></select>
+        <span class="live" id="live" title="Оновлення в реальному часі"></span><span id="whoami"></span>
+        <button class="secondary" id="logout">Вийти</button></div>
+    </header>
+
+    <main>
+      <section id="tab-flights">
+        <div class="toolbar">
+          <label>Дата <input type="date" id="f-date"></label>
+          <label>Напрямок <select id="f-dir"><option value="">Усі</option><option value="D">Відправлення</option><option value="A">Прибуття</option></select></label>
+          <label>Статус <select id="f-status"><option value="">Усі</option></select></label>
+          <label>Пошук <input id="f-q" placeholder="PS101 або WAW"></label>
+          <button class="primary" id="btn-new">+ Новий рейс</button>
+        </div>
+        <div class="panel" style="padding:0; overflow:auto; max-height:70vh">
+          <table>
+            <thead><tr><th>Рейс</th><th>Напр.</th><th>Аеропорт</th><th>План</th><th>Розрах.</th><th>Факт</th><th>Статус</th><th>ПС</th><th>Стоянка</th><th>Гейт</th><th>Стійки/стрічка</th><th>Вер.</th><th></th></tr></thead>
+            <tbody id="flights-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="tab-resources" hidden>
+        <div class="toolbar">
+          <label>Дата <input type="date" id="r-date"></label>
+          <label>Тип ресурсу <select id="r-type"><option value="STAND">Стоянки</option><option value="GATE">Гейти</option><option value="DESK">Стійки реєстрації</option><option value="BELT">Багажні стрічки</option></select></label>
+          <button class="secondary" id="btn-auto">Перерахувати розподіл на дату</button>
+        </div>
+        <div class="panel"><h2>Конфлікти</h2><ul class="conflicts" id="conflicts"></ul></div>
+        <div class="panel"><h2>Діаграма Ганта <span class="muted" style="font-weight:normal">(жовті - ручні призначення; клік - перепризначити)</span></h2><div class="gantt" id="gantt"></div></div>
+      </section>
+
+      <section id="tab-acdm" hidden>
+        <div class="toolbar">
+          <label>Дата <input type="date" id="a-date"></label>
+          <span class="muted">TSAT розраховує передвильотний секвенсор: інтервал між запусками не менше 3 хв.</span>
+        </div>
+        <div class="panel" style="padding:0; overflow:auto; max-height:70vh">
+          <table>
+            <thead><tr><th>Рейс</th><th>SOBT</th><th>EOBT</th><th>TOBT</th><th>TSAT</th><th>ASBT</th><th>ARDT</th><th>AOBT</th><th>Статус</th><th></th></tr></thead>
+            <tbody id="acdm-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="tab-tasks" hidden>
+        <div class="toolbar">
+          <label>Дата <input type="date" id="t-date"></label>
+          <label>Бригада <select id="t-team"><option value="">Усі</option><option value="ramp">Перон (ramp)</option><option value="fuel">Заправлення</option><option value="catering">Кейтеринг</option><option value="cleaning">Прибирання</option><option value="bus">Автобуси</option></select></label>
+          <label>Статус <select id="t-status"><option value="">Усі</option><option value="PLANNED">Заплановано</option><option value="IN_PROGRESS">Виконується</option><option value="DONE">Виконано</option><option value="CANCELLED">Скасовано</option></select></label>
+          <label><span>&nbsp;</span><span><input type="checkbox" id="t-overdue"> лише прострочені</span></label>
+        </div>
+        <div class="panel" style="padding:0; overflow:auto; max-height:70vh">
+          <table>
+            <thead><tr><th>План</th><th>Рейс</th><th>Операція</th><th>Бригада</th><th>Статус</th><th>Початок</th><th>Завершення</th><th>Виконавець</th><th></th></tr></thead>
+            <tbody id="tasks-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="tab-schedule" hidden>
+        <div class="panel">
+          <h2>Імпорт сезонного розкладу (IATA SSIM, записи типу 3)</h2>
+          <form id="ssim-form"><input type="file" name="file" accept=".ssim,.txt" required> <button class="primary">Імпортувати</button></form>
+          <pre id="ssim-result" class="muted"></pre>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="dlg-flight"><form method="dialog" id="flight-form">
+    <h3 id="flight-form-title">Новий рейс</h3>
+    <div class="grid2">
+      <label>Авіакомпанія <input name="airline" maxlength="3" required placeholder="PS"></label>
+      <label>Номер <input name="number" maxlength="5" required placeholder="101"></label>
+      <label>Напрямок <select name="direction"><option value="D">Відправлення</option><option value="A">Прибуття</option></select></label>
+      <label>Аеропорт (IATA) <input name="station" maxlength="3" required placeholder="WAW"></label>
+      <label>Тип ПС <input name="aircraft_type" maxlength="4" required placeholder="738"></label>
+      <label>Плановий час <input name="scheduled_at" type="datetime-local" required></label>
+      <label>Розрахунковий час <input name="estimated_at" type="datetime-local"></label>
+      <label>Термінал <input name="terminal" maxlength="3" placeholder="D"></label>
+      <label>Шенгенська зона <select name="schengen"><option value="true">Так</option><option value="false">Ні</option></select></label>
+      <label>Причина зміни (код IATA або текст) <input name="reason" placeholder="93"></label>
+    </div>
+    <div class="error" id="flight-error"></div>
+    <div class="dialog-actions"><button class="secondary" value="cancel" formnovalidate>Скасувати</button><button class="primary" id="flight-save" value="default">Зберегти</button></div>
+  </form></dialog>
+
+  <dialog id="dlg-status"><form method="dialog" id="status-form">
+    <h3>Зміна статусу <span id="status-flight"></span></h3>
+    <div class="grid2">
+      <label>Новий статус <select name="status" id="status-select"></select></label>
+      <label>Час (для затримки/факту) <input name="at" type="datetime-local"></label>
+      <label style="grid-column: span 2">Причина <input name="reason" placeholder="Обов'язково для DELAYED і CANCELLED"></label>
+    </div>
+    <div class="error" id="status-error"></div>
+    <div class="dialog-actions"><button class="secondary" value="cancel" formnovalidate>Скасувати</button><button class="primary" value="default">Застосувати</button></div>
+  </form></dialog>
+
+  <dialog id="dlg-history"><div class="body">
+    <h3>Історія змін <span id="history-flight"></span></h3>
+    <div style="max-height:60vh; overflow:auto"><table><thead><tr><th>Час</th><th>Подія</th><th>Хто</th><th>Зміни</th><th>Причина</th></tr></thead><tbody id="history-body"></tbody></table></div>
+    <div class="dialog-actions"><button class="secondary" onclick="this.closest('dialog').close()">Закрити</button></div>
+  </div></dialog>
+
+  <dialog id="dlg-assign"><form method="dialog" id="assign-form">
+    <h3>Перепризначення ресурсу</h3>
+    <p id="assign-info" class="muted"></p>
+    <label>Коди ресурсів (через кому) <input name="codes" required></label>
+    <div class="error" id="assign-error"></div>
+    <div class="dialog-actions"><button class="secondary" value="cancel" formnovalidate>Скасувати</button><button class="primary" value="default">Призначити</button></div>
+  </form></dialog>
+
+  <dialog id="dlg-tobt"><form method="dialog" id="tobt-form">
+    <h3>Підтвердження TOBT <span id="tobt-flight"></span></h3>
+    <label>TOBT <input name="tobt" type="datetime-local" required></label>
+    <div class="error" id="tobt-error"></div>
+    <div class="dialog-actions"><button class="secondary" value="cancel" formnovalidate>Скасувати</button><button class="primary" value="default">Підтвердити</button></div>
+  </form></dialog>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
